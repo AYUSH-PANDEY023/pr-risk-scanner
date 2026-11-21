@@ -2,6 +2,8 @@
 
 Local-first Node.js CLI that scores pull request risk (`0–100`) from your git diff, TypeScript/JavaScript AST, and copy-paste detection. Runs completely offline with no external APIs or keys.
 
+[./assets/demo.png]
+
 ## Why
 
 Large PRs—especially ones with heavy generated or refactored code—hide risky changes behind noisy diffs. `pr-risk-scanner` gives reviewers a fast, deterministic signal before reading a single line: how big the diff is, whether tests were updated, whether sensitive paths were touched, and where oversized functions or duplicated blocks crept in.
