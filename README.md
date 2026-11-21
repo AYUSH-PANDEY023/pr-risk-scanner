@@ -2,7 +2,7 @@
 
 Local-first Node.js CLI that scores pull request risk (`0–100`) from your git diff, TypeScript/JavaScript AST, and copy-paste detection. Runs completely offline with no external APIs or keys.
 
-[./assets/demo.png]
+<p><img src="./assets/demo.png" alt="pr-risk-scanner terminal output" width="100%" /></p>
 
 ## Why
 
