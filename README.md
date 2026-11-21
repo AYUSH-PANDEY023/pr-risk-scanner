@@ -8,35 +8,6 @@ Local-first Node.js CLI that scores pull request risk (`0–100`) from your git 
 
 Large PRs—especially ones with heavy generated or refactored code—hide risky changes behind noisy diffs. `pr-risk-scanner` gives reviewers a fast, deterministic signal before reading a single line: how big the diff is, whether tests were updated, whether sensitive paths were touched, and where oversized functions or duplicated blocks crept in.
 
-## Sample Output
-
-```text
-pr-risk-scanner  feat/checkout-retry → main
-Risk Score: 74/100  ███████████████░░░░░  HIGH
-
-┌─────────────────────────┬──────────────────────┬────────┬────────┐
-│ Signal                  │ Observed             │ Points │ Status │
-├─────────────────────────┼──────────────────────┼────────┼────────┤
-│ Files changed           │ 6 files              │   4/15 │ LOW    │
-│ Lines changed           │ 342 lines            │  10/20 │ MEDIUM │
-│ Test coverage delta     │ 0 test files updated │  15/15 │ CRITICAL │
-│ Critical paths          │ 2 sensitive files    │  21/25 │ HIGH   │
-│ Duplicate code (jscpd)  │ 1 block              │   4/10 │ MEDIUM │
-│ Large functions (>50L)  │ 2 functions          │  12/15 │ HIGH   │
-└─────────────────────────┴──────────────────────┴────────┴────────┘
-
-Top Risks
-  CRITICAL  src/payments/checkout.ts        Touched critical path (/payments) with 148 lines changed
-  HIGH      (branch diff)                   6 source file(s) changed with no matching test updates
-  HIGH      src/payments/checkout.ts:42     processCheckout is 112 lines long (limit 50)
-  MEDIUM    src/payments/retry.ts:18-41     24 duplicated lines also found in src/payments/refund.ts:29-52
-
-Suggested Human Review Focus
-  1. [P1] Payments & idempotency — Verify idempotency keys, webhook signature checks, and rounding/currency handling in src/payments/checkout.ts.
-  2. [P1] Missing test coverage — Request unit/integration tests covering failure branches in src/payments/checkout.ts, src/payments/retry.ts.
-  3. [P2] Complex functions — Walk through control flow and error handling in processCheckout (src/payments/checkout.ts:42, 112 lines) and consider extracting helpers.
-```
-
 ## Install
 
 ### Direct from GitHub
