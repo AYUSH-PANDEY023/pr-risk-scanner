@@ -4,8 +4,8 @@ import type { ChangedFile, GitDiffResult, LineRange } from './types.js';
 
 async function refExists(git: SimpleGit, ref: string): Promise<boolean> {
   try {
-    await git.raw(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
-    return true;
+    const out = (await git.raw(['rev-parse', '--verify', `${ref}^{commit}`])).trim();
+    return /^[0-9a-f]{7,40}$/i.test(out);
   } catch {
     return false;
   }

@@ -105,7 +105,18 @@ export function formatReport(report: ScanReport): string {
   } else {
     for (const risk of report.topRisks) {
       const badge = colorSeverity(risk.severity, risk.severity.toUpperCase().padEnd(8));
-      lines.push(`  ${badge}  ${pc.cyan(risk.location)}  ${risk.message}`);
+      const pts = risk.points > 0 ? pc.dim(`(+${risk.points})`) : '';
+      lines.push(`  ${badge}  ${pc.cyan(risk.location)}  ${risk.message} ${pts}`);
+    }
+  }
+
+  if (report.suppressed.length > 0) {
+    lines.push('');
+    lines.push(pc.bold(`Suppressed Findings (${report.suppressed.length})`));
+    for (const item of report.suppressed) {
+      lines.push(
+        `  ${pc.dim('SUPPRESSED')}  ${pc.cyan(item.location)}  [${item.ruleId}] ${item.reason} ${pc.dim(`(${item.source})`)}`,
+      );
     }
   }
 
@@ -150,7 +161,21 @@ export function formatMarkdownReport(report: ScanReport): string {
     lines.push('');
     for (const risk of report.topRisks) {
       lines.push(
-        `- **${risk.severity.toUpperCase()}** \`${risk.location}\` — ${risk.message}`,
+        `- **${risk.severity.toUpperCase()}** \`${risk.location}\` (+${risk.points}) — ${risk.message} _(${risk.evidence})_`,
+      );
+    }
+    lines.push('');
+    lines.push('</details>');
+  }
+
+  if (report.suppressed.length > 0) {
+    lines.push('');
+    lines.push('<details>');
+    lines.push(`<summary><strong>Suppressed Findings (${report.suppressed.length})</strong></summary>`);
+    lines.push('');
+    for (const item of report.suppressed) {
+      lines.push(
+        `- \`${item.location}\` \`[${item.ruleId}]\` — ${item.reason} _(${item.source})_`,
       );
     }
     lines.push('');
@@ -163,6 +188,78 @@ export function formatMarkdownReport(report: ScanReport): string {
     lines.push(`${idx + 1}. **[${item.priority}] ${item.area}** — ${item.detail}`);
   });
   lines.push('');
+  lines.push(
+    '_Note: This score is a deterministic heuristic for review prioritization, not a bug probability estimate._',
+  );
+  lines.push('');
 
   return lines.join('\n');
+}
+
+function severityToSarifLevel(severity: Severity): 'error' | 'warning' | 'note' {
+  if (severity === 'critical' || severity === 'high') return 'error';
+  if (severity === 'medium') return 'warning';
+  return 'note';
+}
+
+export function formatSarifReport(report: ScanReport): string {
+  const uniqueRules = new Map<string, { id: string; shortDescription: { text: string } }>();
+
+  for (const risk of report.topRisks) {
+    if (!uniqueRules.has(risk.ruleId)) {
+      uniqueRules.set(risk.ruleId, {
+        id: risk.ruleId,
+        shortDescription: { text: `pr-risk-scanner heuristic: ${risk.ruleId}` },
+      });
+    }
+  }
+
+  const results = report.topRisks.map((risk) => ({
+    ruleId: risk.ruleId,
+    level: severityToSarifLevel(risk.severity),
+    message: { text: `${risk.message} (${risk.evidence})` },
+    locations: risk.file
+      ? [
+          {
+            physicalLocation: {
+              artifactLocation: { uri: risk.file },
+              ...(risk.line
+                ? { region: { startLine: risk.line } }
+                : {}),
+            },
+          },
+        ]
+      : [],
+    properties: {
+      category: risk.category,
+      points: risk.points,
+    },
+  }));
+
+  const sarif = {
+    $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
+    version: '2.1.0',
+    runs: [
+      {
+        tool: {
+          driver: {
+            name: 'pr-risk-scanner',
+            version: report.toolVersion,
+            informationUri: 'https://github.com/AYUSH-PANDEY023/pr-risk-scanner',
+            rules: [...uniqueRules.values()],
+          },
+        },
+        properties: {
+          branch: report.branch,
+          baseRef: report.baseRef,
+          riskScore: report.score,
+          riskLevel: report.level,
+          suppressedCount: report.suppressed.length,
+        },
+        results,
+      },
+    ],
+  };
+
+  return `${JSON.stringify(sarif, null, 2)}\n`;
 }

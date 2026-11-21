@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/AYUSH-PANDEY023/pr-risk-scanner/blob/main/pr-risk.schema.json",
+  "title": "pr-risk-scanner configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "baseBranch": { "type": "string", "minLength": 1, "default": "main" },
+    "failThreshold": { "type": "integer", "minimum": 0, "maximum": 100, "default": 70 },
+    "severityThresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "medium": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "high": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "critical": { "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "criticalPaths": { "type": "array", "items": { "type": "string" } },
+    "maxFunctionLines": { "type": "integer", "minimum": 1, "default": 50 },
+    "maxCyclomaticComplexity": { "type": "integer", "minimum": 1, "default": 12 },
+    "maxNestingDepth": { "type": "integer", "minimum": 1, "default": 4 },
+    "maxClassLines": { "type": "integer", "minimum": 1, "default": 250 },
+    "maxClassMethods": { "type": "integer", "minimum": 1, "default": 15 },
+    "duplicateMinLines": { "type": "integer", "minimum": 1, "default": 6 },
+    "duplicateMinTokens": { "type": "integer", "minimum": 1, "default": 50 },
+    "ignoreFiles": { "type": "array", "items": { "type": "string" } },
+    "testPatterns": { "type": "array", "items": { "type": "string" } },
+    "disabledRules": { "type": "array", "items": { "type": "string" } },
+    "suppressions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["reason"],
+        "additionalProperties": false,
+        "properties": {
+          "rule": { "type": "string" },
+          "file": { "type": "string" },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filesChanged": { "type": "number", "minimum": 0 },
+        "linesChanged": { "type": "number", "minimum": 0 },
+        "missingTests": { "type": "number", "minimum": 0 },
+        "criticalPaths": { "type": "number", "minimum": 0 },
+        "duplicateCode": { "type": "number", "minimum": 0 },
+        "largeFunctions": { "type": "number", "minimum": 0 },
+        "riskyPatterns": { "type": "number", "minimum": 0 },
+        "dependencyAndConfig": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

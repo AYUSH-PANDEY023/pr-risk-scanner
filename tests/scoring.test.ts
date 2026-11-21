@@ -7,8 +7,10 @@ function emptyMetrics(overrides: Partial<DiffMetricsResult> = {}): DiffMetricsRe
   return {
     sourceFiles: [],
     testFiles: [],
+    deletedTestFiles: [],
     ignoredFiles: [],
     criticalMatches: [],
+    configChanges: [],
     totalFilesChanged: 0,
     totalLinesChanged: 0,
     missingTests: false,
@@ -17,16 +19,16 @@ function emptyMetrics(overrides: Partial<DiffMetricsResult> = {}): DiffMetricsRe
 }
 
 describe('scoring', () => {
-  it('scores a clean small PR as low risk', () => {
-    const report = buildScanReport({
+  it('scores a clean small PR as low risk and is deterministic across repeated runs', () => {
+    const input = {
       branch: 'fix/typo',
       baseRef: 'main',
       diffMetrics: emptyMetrics({
         sourceFiles: [
-          { path: 'src/utils.ts', insertions: 12, deletions: 4, binary: false, status: 'modified' },
+          { path: 'src/utils.ts', insertions: 12, deletions: 4, binary: false, status: 'modified' as const },
         ],
         testFiles: [
-          { path: 'tests/utils.test.ts', insertions: 10, deletions: 0, binary: false, status: 'modified' },
+          { path: 'tests/utils.test.ts', insertions: 10, deletions: 0, binary: false, status: 'modified' as const },
         ],
         totalFilesChanged: 2,
         totalLinesChanged: 26,
@@ -34,19 +36,27 @@ describe('scoring', () => {
       largeFunctions: [],
       duplicates: [],
       maxFunctionLines: 50,
-    });
+    };
 
-    expect(report.score).toBe(0);
-    expect(report.level).toBe('low');
-    expect(report.topRisks).toHaveLength(0);
-    expect(report.reviewFocus[0]?.priority).toBe('P3');
+    const run1 = buildScanReport(input);
+    const run2 = buildScanReport(input);
+
+    expect(run1).toEqual(run2);
+    expect(run1.score).toBe(0);
+    expect(run1.level).toBe('low');
+    expect(run1.topRisks).toHaveLength(0);
+    expect(run1.reviewFocus[0]?.priority).toBe('P3');
   });
 
-  it('respects custom signal weights and scores risky patterns', () => {
+  it('respects custom signal weights, severity thresholds, and finding-level evidence', () => {
     const report = buildScanReport({
       branch: 'feat/eval',
       baseRef: 'main',
-      diffMetrics: emptyMetrics({ totalFilesChanged: 1, totalLinesChanged: 10 }),
+      diffMetrics: emptyMetrics({
+        totalFilesChanged: 1,
+        totalLinesChanged: 10,
+        configChanges: [{ file: '.github/workflows/release.yml', kind: 'ci-workflow', churn: 20 }],
+      }),
       largeFunctions: [],
       riskyPatterns: [
         {
@@ -55,6 +65,7 @@ describe('scoring', () => {
           rule: 'unsafe-eval',
           severity: 'high',
           message: 'Direct eval() call',
+          evidence: 'Call expression "eval(...)"',
         },
         {
           file: 'src/run.ts',
@@ -62,6 +73,7 @@ describe('scoring', () => {
           rule: 'unsafe-exec',
           severity: 'high',
           message: 'exec() shell call',
+          evidence: 'child_process shell call "exec(...)"',
         },
         {
           file: 'src/run.ts',
@@ -69,20 +81,24 @@ describe('scoring', () => {
           rule: 'empty-catch',
           severity: 'medium',
           message: 'Empty catch block',
+          evidence: 'Catch clause body contains 0 executable statements',
         },
       ],
       duplicates: [],
       maxFunctionLines: 50,
       weights: { ...DEFAULT_WEIGHTS, riskyPatterns: 30 },
+      severityThresholds: { medium: 20, high: 30, critical: 70 },
     });
 
     const signal = report.signals.find((s) => s.key === 'riskyPatterns');
     expect(signal?.maxPoints).toBe(30);
     expect(signal?.points).toBe(30);
-    expect(report.metrics.riskyPatterns).toBe(3);
+    expect(report.level).toBe('high');
+    expect(report.topRisks[0]?.evidence).toBeTruthy();
+    expect(report.topRisks[0]?.points).toBeGreaterThan(0);
   });
 
-  it('caps total score at 100 and prioritizes critical paths and missing tests', () => {
+  it('caps total score at 100 and prioritizes critical paths, deleted tests, and risky patterns', () => {
     const report = buildScanReport({
       branch: 'feat/billing-rewrite',
       baseRef: 'main',
@@ -94,11 +110,13 @@ describe('scoring', () => {
           binary: false,
           status: 'modified' as const,
         })),
+        deletedTestFiles: ['tests/payments.test.ts'],
         criticalMatches: [
           { file: 'src/payments/checkout.ts', matchedPattern: '/payments', churn: 180 },
           { file: 'src/auth/session.ts', matchedPattern: '/auth', churn: 95 },
           { file: 'db/migrations/012_billing.sql', matchedPattern: '/migrations', churn: 40 },
         ],
+        configChanges: [{ file: 'package.json', kind: 'dependency-manifest', churn: 12 }],
         totalFilesChanged: 26,
         totalLinesChanged: 1300,
         missingTests: true,
@@ -108,8 +126,22 @@ describe('scoring', () => {
         { file: 'src/auth/session.ts', name: 'verifyToken', line: 10, endLine: 82, lineCount: 73 },
       ],
       riskyPatterns: [
-        { file: 'src/payments/checkout.ts', line: 44, rule: 'empty-catch', severity: 'medium', message: 'Empty catch block' },
-        { file: 'src/auth/session.ts', line: 19, rule: 'unsafe-eval', severity: 'high', message: 'Direct eval() call' },
+        {
+          file: 'src/payments/checkout.ts',
+          line: 44,
+          rule: 'empty-catch',
+          severity: 'medium',
+          message: 'Empty catch block',
+          evidence: '0 statements',
+        },
+        {
+          file: 'src/auth/session.ts',
+          line: 19,
+          rule: 'unsafe-eval',
+          severity: 'high',
+          message: 'Direct eval() call',
+          evidence: 'eval(...)',
+        },
       ],
       duplicates: [
         {
@@ -132,6 +164,7 @@ describe('scoring', () => {
     expect(report.reviewFocus.some((f) => f.area.includes('Auth'))).toBe(true);
     expect(report.reviewFocus.some((f) => f.area.includes('Payments'))).toBe(true);
     expect(report.reviewFocus.some((f) => f.area.includes('migrations'))).toBe(true);
+    expect(report.reviewFocus.some((f) => f.area.includes('Deleted tests'))).toBe(true);
   });
 
   it('maps score bands accurately', () => {

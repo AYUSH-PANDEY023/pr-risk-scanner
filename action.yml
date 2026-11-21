@@ -1,0 +1,62 @@
+name: 'PR Risk Scanner'
+description: 'Offline deterministic PR risk analysis using git diff, ts-morph AST, and jscpd'
+inputs:
+  base:
+    description: 'Base branch or ref to compare HEAD against'
+    required: false
+    default: 'main'
+  threshold:
+    description: 'Risk score (0-100) at or above which the action fails when ci is true'
+    required: false
+    default: '70'
+  ci:
+    description: 'Fail the workflow if risk score meets or exceeds threshold'
+    required: false
+    default: 'false'
+  config:
+    description: 'Optional path to pr-risk.config.json'
+    required: false
+    default: ''
+  sarif-file:
+    description: 'Optional output path for SARIF v2.1.0 report'
+    required: false
+    default: ''
+  write-summary:
+    description: 'Append Markdown report to GitHub Actions job summary'
+    required: false
+    default: 'true'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install pr-risk-scanner dependencies
+      shell: bash
+      run: |
+        cd "${{ github.action_path }}"
+        npm install --ignore-scripts
+        npm run build
+
+    - name: Run offline PR risk scan
+      shell: bash
+      env:
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_THRESHOLD: ${{ inputs.threshold }}
+        INPUT_CI: ${{ inputs.ci }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_SARIF_FILE: ${{ inputs.sarif-file }}
+        INPUT_WRITE_SUMMARY: ${{ inputs.write-summary }}
+      run: |
+        ARGS=(--base "$INPUT_BASE" --threshold "$INPUT_THRESHOLD")
+        if [ -n "$INPUT_CONFIG" ]; then
+          ARGS+=(--config "$INPUT_CONFIG")
+        fi
+        if [ "$INPUT_WRITE_SUMMARY" = "true" ]; then
+          ARGS+=(--github-summary)
+        fi
+        if [ -n "$INPUT_SARIF_FILE" ]; then
+          node "${{ github.action_path }}/dist/cli.js" "${ARGS[@]}" --sarif > "$INPUT_SARIF_FILE"
+        fi
+        if [ "$INPUT_CI" = "true" ]; then
+          ARGS+=(--ci)
+        fi
+        node "${{ github.action_path }}/dist/cli.js" "${ARGS[@]}"

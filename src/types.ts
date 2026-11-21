@@ -7,9 +7,16 @@ export type SignalKey =
   | 'criticalPaths'
   | 'duplicateCode'
   | 'largeFunctions'
-  | 'riskyPatterns';
+  | 'riskyPatterns'
+  | 'dependencyAndConfig';
 
 export type SignalWeights = Record<SignalKey, number>;
+
+export interface SeverityThresholds {
+  medium: number;
+  high: number;
+  critical: number;
+}
 
 export type LineRange = [startLine: number, endLine: number];
 
@@ -37,21 +44,32 @@ export interface LargeFunctionFinding {
   line: number;
   endLine: number;
   lineCount: number;
+  inlineSuppressionReason?: string;
 }
 
-export type RiskyPatternRule =
+export type AstPatternRule =
   | 'empty-catch'
   | 'unsafe-eval'
   | 'unsafe-function'
   | 'unsafe-exec'
-  | 'dangerous-html';
+  | 'dangerous-html'
+  | 'high-complexity'
+  | 'deep-nesting'
+  | 'large-class'
+  | 'unhandled-promise'
+  | 'missing-dependency';
+
+export type RiskyPatternRule = AstPatternRule;
 
 export interface RiskyPatternFinding {
   file: string;
   line: number;
-  rule: RiskyPatternRule;
+  rule: AstPatternRule;
   severity: Severity;
   message: string;
+  evidence: string;
+  packageName?: string;
+  inlineSuppressionReason?: string;
 }
 
 export interface DuplicateBlockFinding {
@@ -65,18 +83,40 @@ export interface DuplicateBlockFinding {
   tokens: number;
 }
 
+export interface ConfigChangeFinding {
+  file: string;
+  kind: 'dependency-manifest' | 'lockfile' | 'ci-workflow' | 'runtime-config' | 'env-template';
+  churn: number;
+}
+
 export interface DiffMetricsResult {
   sourceFiles: ChangedFile[];
   testFiles: ChangedFile[];
+  deletedTestFiles: string[];
   ignoredFiles: string[];
   criticalMatches: Array<{
     file: string;
     matchedPattern: string;
     churn: number;
   }>;
+  configChanges: ConfigChangeFinding[];
   totalFilesChanged: number;
   totalLinesChanged: number;
   missingTests: boolean;
+}
+
+export interface SuppressionRule {
+  rule?: string;
+  file?: string;
+  reason: string;
+}
+
+export interface SuppressedFinding {
+  ruleId: string;
+  location: string;
+  message: string;
+  source: 'inline' | 'config-rule' | 'config-rule-file';
+  reason: string;
 }
 
 export interface SignalScore {
@@ -89,10 +129,15 @@ export interface SignalScore {
 }
 
 export interface RiskItem {
+  ruleId: string;
   severity: Severity;
   category: SignalKey;
   location: string;
+  file?: string;
+  line?: number;
+  points: number;
   message: string;
+  evidence: string;
 }
 
 export interface ReviewFocus {
@@ -102,33 +147,46 @@ export interface ReviewFocus {
 }
 
 export interface ScanReport {
+  toolVersion: string;
   branch: string;
   baseRef: string;
   score: number;
   level: Severity;
   signals: SignalScore[];
   topRisks: RiskItem[];
+  suppressed: SuppressedFinding[];
+  missingDependencies: string[];
   reviewFocus: ReviewFocus[];
   metrics: {
     filesChanged: number;
     linesChanged: number;
     testFilesChanged: number;
+    deletedTestFiles: number;
     criticalFilesTouched: number;
+    configFilesChanged: number;
     duplicateBlocks: number;
     largeFunctions: number;
     riskyPatterns: number;
+    suppressedCount: number;
   };
 }
 
 export interface ScannerConfig {
   baseBranch: string;
   failThreshold: number;
+  severityThresholds: SeverityThresholds;
   criticalPaths: string[];
   maxFunctionLines: number;
+  maxCyclomaticComplexity: number;
+  maxNestingDepth: number;
+  maxClassLines: number;
+  maxClassMethods: number;
   duplicateMinLines: number;
   duplicateMinTokens: number;
   ignoreFiles: string[];
   testPatterns: string[];
+  disabledRules: string[];
+  suppressions: SuppressionRule[];
   weights: SignalWeights;
 }
 

@@ -1,12 +1,22 @@
 {
+  "$schema": "./pr-risk.schema.json",
   "baseBranch": "main",
   "failThreshold": 70,
+  "severityThresholds": {
+    "medium": 30,
+    "high": 60,
+    "critical": 80
+  },
   "criticalPaths": [
     "/auth",
     "/payments",
     "/migrations"
   ],
   "maxFunctionLines": 50,
+  "maxCyclomaticComplexity": 12,
+  "maxNestingDepth": 4,
+  "maxClassLines": 250,
+  "maxClassMethods": 15,
   "duplicateMinLines": 6,
   "duplicateMinTokens": 50,
   "ignoreFiles": [
@@ -23,13 +33,16 @@
     "(^|/)__tests__/",
     "(^|/)tests?/"
   ],
+  "disabledRules": [],
+  "suppressions": [],
   "weights": {
-    "filesChanged": 12,
-    "linesChanged": 18,
+    "filesChanged": 10,
+    "linesChanged": 15,
     "missingTests": 15,
     "criticalPaths": 20,
-    "duplicateCode": 10,
+    "duplicateCode": 8,
     "largeFunctions": 12,
-    "riskyPatterns": 13
+    "riskyPatterns": 12,
+    "dependencyAndConfig": 8
   }
 }
