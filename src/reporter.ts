@@ -124,3 +124,45 @@ export function formatReport(report: ScanReport): string {
   lines.push('');
   return lines.join('\n');
 }
+
+export function formatMarkdownReport(report: ScanReport): string {
+  const lines: string[] = [];
+
+  lines.push(`## PR Risk Report — ${report.score}/100 (${report.level.toUpperCase()})`);
+  lines.push('');
+  lines.push(`Branch: \`${report.branch}\` → \`${report.baseRef}\``);
+  lines.push('');
+  lines.push('| Signal | Observed | Points | Status |');
+  lines.push('| --- | --- | ---: | --- |');
+
+  for (const signal of report.signals) {
+    lines.push(
+      `| ${signal.label} | ${signal.observed} | ${signal.points}/${signal.maxPoints} | **${signal.severity.toUpperCase()}** |`,
+    );
+  }
+
+  lines.push('');
+  if (report.topRisks.length === 0) {
+    lines.push('No major risk triggers found in this diff.');
+  } else {
+    lines.push('<details>');
+    lines.push(`<summary><strong>Top Risks (${report.topRisks.length})</strong></summary>`);
+    lines.push('');
+    for (const risk of report.topRisks) {
+      lines.push(
+        `- **${risk.severity.toUpperCase()}** \`${risk.location}\` — ${risk.message}`,
+      );
+    }
+    lines.push('');
+    lines.push('</details>');
+  }
+
+  lines.push('');
+  lines.push('### Suggested Human Review Focus');
+  report.reviewFocus.forEach((item, idx) => {
+    lines.push(`${idx + 1}. **[${item.priority}] ${item.area}** — ${item.detail}`);
+  });
+  lines.push('');
+
+  return lines.join('\n');
+}

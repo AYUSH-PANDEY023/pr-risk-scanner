@@ -22,5 +22,14 @@
     "\\.spec\\.[jt]sx?$",
     "(^|/)__tests__/",
     "(^|/)tests?/"
-  ]
+  ],
+  "weights": {
+    "filesChanged": 12,
+    "linesChanged": 18,
+    "missingTests": 15,
+    "criticalPaths": 20,
+    "duplicateCode": 10,
+    "largeFunctions": 12,
+    "riskyPatterns": 13
+  }
 }

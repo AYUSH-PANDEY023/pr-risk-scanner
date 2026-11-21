@@ -1,6 +1,16 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ScannerConfig, ScanOptions } from './types.js';
+import type { ScannerConfig, ScanOptions, SignalWeights } from './types.js';
+
+export const DEFAULT_WEIGHTS: SignalWeights = {
+  filesChanged: 12,
+  linesChanged: 18,
+  missingTests: 15,
+  criticalPaths: 20,
+  duplicateCode: 10,
+  largeFunctions: 12,
+  riskyPatterns: 13,
+};
 
 export const DEFAULT_CONFIG: ScannerConfig = {
   baseBranch: 'main',
@@ -25,11 +35,16 @@ export const DEFAULT_CONFIG: ScannerConfig = {
     '(^|/)__tests__/',
     '(^|/)tests?/',
   ],
+  weights: { ...DEFAULT_WEIGHTS },
 };
 
 const CONFIG_FILENAMES = ['pr-risk.config.json', '.pr-riskrc.json'];
 
-function readJsonConfig(filePath: string): Partial<ScannerConfig> {
+type PartialConfigFile = Partial<Omit<ScannerConfig, 'weights'>> & {
+  weights?: Partial<SignalWeights>;
+};
+
+function readJsonConfig(filePath: string): PartialConfigFile {
   const raw = fs.readFileSync(filePath, 'utf8');
   let parsed: unknown;
 
@@ -44,11 +59,11 @@ function readJsonConfig(filePath: string): Partial<ScannerConfig> {
     throw new Error(`Config file ${filePath} must export a JSON object.`);
   }
 
-  return parsed as Partial<ScannerConfig>;
+  return parsed as PartialConfigFile;
 }
 
 export function loadConfig(repoRoot: string, overrides: ScanOptions = {}): ScannerConfig {
-  let fileConfig: Partial<ScannerConfig> = {};
+  let fileConfig: PartialConfigFile = {};
 
   if (overrides.configPath) {
     const resolved = path.resolve(repoRoot, overrides.configPath);
@@ -69,6 +84,10 @@ export function loadConfig(repoRoot: string, overrides: ScanOptions = {}): Scann
   return {
     ...DEFAULT_CONFIG,
     ...fileConfig,
+    weights: {
+      ...DEFAULT_WEIGHTS,
+      ...(fileConfig.weights ?? {}),
+    },
     ...(overrides.base ? { baseBranch: overrides.base } : {}),
     ...(typeof overrides.threshold === 'number' ? { failThreshold: overrides.threshold } : {}),
     ...(typeof overrides.maxFunctionLines === 'number'

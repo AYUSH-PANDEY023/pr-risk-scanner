@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_WEIGHTS } from '../src/config.js';
 import { buildScanReport, scoreToLevel } from '../src/scoring.js';
 import type { DiffMetricsResult } from '../src/types.js';
 
@@ -41,6 +42,46 @@ describe('scoring', () => {
     expect(report.reviewFocus[0]?.priority).toBe('P3');
   });
 
+  it('respects custom signal weights and scores risky patterns', () => {
+    const report = buildScanReport({
+      branch: 'feat/eval',
+      baseRef: 'main',
+      diffMetrics: emptyMetrics({ totalFilesChanged: 1, totalLinesChanged: 10 }),
+      largeFunctions: [],
+      riskyPatterns: [
+        {
+          file: 'src/run.ts',
+          line: 12,
+          rule: 'unsafe-eval',
+          severity: 'high',
+          message: 'Direct eval() call',
+        },
+        {
+          file: 'src/run.ts',
+          line: 18,
+          rule: 'unsafe-exec',
+          severity: 'high',
+          message: 'exec() shell call',
+        },
+        {
+          file: 'src/run.ts',
+          line: 24,
+          rule: 'empty-catch',
+          severity: 'medium',
+          message: 'Empty catch block',
+        },
+      ],
+      duplicates: [],
+      maxFunctionLines: 50,
+      weights: { ...DEFAULT_WEIGHTS, riskyPatterns: 30 },
+    });
+
+    const signal = report.signals.find((s) => s.key === 'riskyPatterns');
+    expect(signal?.maxPoints).toBe(30);
+    expect(signal?.points).toBe(30);
+    expect(report.metrics.riskyPatterns).toBe(3);
+  });
+
   it('caps total score at 100 and prioritizes critical paths and missing tests', () => {
     const report = buildScanReport({
       branch: 'feat/billing-rewrite',
@@ -66,6 +107,10 @@ describe('scoring', () => {
         { file: 'src/payments/checkout.ts', name: 'runCheckout', line: 22, endLine: 145, lineCount: 124 },
         { file: 'src/auth/session.ts', name: 'verifyToken', line: 10, endLine: 82, lineCount: 73 },
       ],
+      riskyPatterns: [
+        { file: 'src/payments/checkout.ts', line: 44, rule: 'empty-catch', severity: 'medium', message: 'Empty catch block' },
+        { file: 'src/auth/session.ts', line: 19, rule: 'unsafe-eval', severity: 'high', message: 'Direct eval() call' },
+      ],
       duplicates: [
         {
           fileA: 'src/payments/checkout.ts',
@@ -76,16 +121,6 @@ describe('scoring', () => {
           endLineB: 45,
           lines: 31,
           tokens: 180,
-        },
-        {
-          fileA: 'src/payments/mod1.ts',
-          startLineA: 1,
-          endLineA: 20,
-          fileB: 'src/payments/mod2.ts',
-          startLineB: 1,
-          endLineB: 20,
-          lines: 20,
-          tokens: 120,
         },
       ],
       maxFunctionLines: 50,

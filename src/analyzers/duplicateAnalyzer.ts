@@ -1,12 +1,13 @@
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
-import { createRequire } from "node:module";
-import type { detectClones as DetectClonesFn } from "jscpd";
-
-const require = createRequire(import.meta.url);
-const { detectClones } = require("jscpd") as { detectClones: typeof DetectClonesFn };
+import type { detectClones as DetectClonesFn } from 'jscpd';
 import { normalizePath } from '../git.js';
 import type { ChangedFile, DuplicateBlockFinding, ScannerConfig } from '../types.js';
+
+// Load jscpd via CJS to avoid its ESM bundle's extensionless colors/safe import on Node 20+
+const require = createRequire(import.meta.url);
+const { detectClones } = require('jscpd') as { detectClones: typeof DetectClonesFn };
 
 function toRepoRelative(repoRoot: string, filePath: string): string {
   const abs = path.isAbsolute(filePath) ? filePath : path.resolve(repoRoot, filePath);
@@ -87,7 +88,10 @@ export async function analyzeDuplicates(
       startLineB,
       endLineB,
       lines,
-      tokens: Math.max(0, (clone.duplicationA.end.position ?? 0) - (clone.duplicationA.start.position ?? 0)),
+      tokens: Math.max(
+        0,
+        (clone.duplicationA.end.position ?? 0) - (clone.duplicationA.start.position ?? 0),
+      ),
     });
   }
 

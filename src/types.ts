@@ -6,7 +6,12 @@ export type SignalKey =
   | 'missingTests'
   | 'criticalPaths'
   | 'duplicateCode'
-  | 'largeFunctions';
+  | 'largeFunctions'
+  | 'riskyPatterns';
+
+export type SignalWeights = Record<SignalKey, number>;
+
+export type LineRange = [startLine: number, endLine: number];
 
 export interface ChangedFile {
   path: string;
@@ -21,6 +26,7 @@ export interface GitDiffResult {
   currentBranch: string;
   baseRef: string;
   files: ChangedFile[];
+  changedLineRanges: Record<string, LineRange[]>;
   totalInsertions: number;
   totalDeletions: number;
 }
@@ -31,6 +37,21 @@ export interface LargeFunctionFinding {
   line: number;
   endLine: number;
   lineCount: number;
+}
+
+export type RiskyPatternRule =
+  | 'empty-catch'
+  | 'unsafe-eval'
+  | 'unsafe-function'
+  | 'unsafe-exec'
+  | 'dangerous-html';
+
+export interface RiskyPatternFinding {
+  file: string;
+  line: number;
+  rule: RiskyPatternRule;
+  severity: Severity;
+  message: string;
 }
 
 export interface DuplicateBlockFinding {
@@ -95,6 +116,7 @@ export interface ScanReport {
     criticalFilesTouched: number;
     duplicateBlocks: number;
     largeFunctions: number;
+    riskyPatterns: number;
   };
 }
 
@@ -107,6 +129,7 @@ export interface ScannerConfig {
   duplicateMinTokens: number;
   ignoreFiles: string[];
   testPatterns: string[];
+  weights: SignalWeights;
 }
 
 export interface ScanOptions {

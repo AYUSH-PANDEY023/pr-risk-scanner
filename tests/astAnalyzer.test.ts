@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { analyzeLargeFunctions } from '../src/analyzers/astAnalyzer.js';
+import { analyzeAst, analyzeLargeFunctions } from '../src/analyzers/astAnalyzer.js';
 
 const tempDirs: string[] = [];
 
@@ -57,6 +57,58 @@ describe('astAnalyzer', () => {
     expect(findings.map((f) => f.name)).toContain('bigProcessor');
     expect(findings.map((f) => f.name)).toContain('PaymentService.charge');
     expect(findings[0]?.line).toBeGreaterThan(0);
+  });
+
+  it('ignores untouched legacy functions when diff line ranges are supplied', () => {
+    const bodyLines = Array.from({ length: 18 }, (_, i) => `  const v${i} = ${i};`).join('\n');
+    const source = [
+      'export function legacyBig() {',
+      bodyLines,
+      '  return v0;',
+      '}',
+      '',
+      'export function smallEdit() {',
+      '  return 42;',
+      '}',
+    ].join('\n');
+
+    const repoRoot = createTempRepo({ 'src/legacy.ts': source });
+
+    const result = analyzeAst(
+      repoRoot,
+      [{ path: 'src/legacy.ts', insertions: 1, deletions: 1, binary: false, status: 'modified' }],
+      15,
+      { 'src/legacy.ts': [[23, 25]] },
+    );
+
+    expect(result.largeFunctions).toHaveLength(0);
+  });
+
+  it('detects empty catch blocks, eval, new Function, and child_process.exec', () => {
+    const source = [
+      "import { exec } from 'node:child_process';",
+      'export function run(input: string) {',
+      '  try {',
+      '    eval(input);',
+      '    exec(input);',
+      '    return new Function("return 1")();',
+      '  } catch (err) {}',
+      '}',
+    ].join('\n');
+
+    const repoRoot = createTempRepo({ 'src/unsafe.ts': source });
+
+    const result = analyzeAst(
+      repoRoot,
+      [{ path: 'src/unsafe.ts', insertions: 8, deletions: 0, binary: false, status: 'added' }],
+      50,
+    );
+
+    const rules = result.riskyPatterns.map((r) => r.rule);
+    expect(rules).toContain('empty-catch');
+    expect(rules).toContain('unsafe-eval');
+    expect(rules).toContain('unsafe-exec');
+    expect(rules).toContain('unsafe-function');
   });
 
   it('skips deleted and non-JS/TS files safely', () => {

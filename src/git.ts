@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { simpleGit, type SimpleGit } from 'simple-git';
-import type { ChangedFile, GitDiffResult } from './types.js';
+import type { ChangedFile, GitDiffResult, LineRange } from './types.js';
 
 async function refExists(git: SimpleGit, ref: string): Promise<boolean> {
   try {
@@ -51,6 +51,36 @@ function parseNameStatus(raw: string): Map<string, ChangedFile['status']> {
   return statusMap;
 }
 
+export function parseDiffHunkRanges(unifiedDiff: string): Record<string, LineRange[]> {
+  const ranges: Record<string, LineRange[]> = {};
+  let currentFile: string | null = null;
+
+  for (const line of unifiedDiff.split(/\r?\n/)) {
+    if (line.startsWith('+++ b/')) {
+      currentFile = normalizePath(line.slice(6).trim());
+      if (!ranges[currentFile]) ranges[currentFile] = [];
+      continue;
+    }
+
+    if (line.startsWith('+++ /dev/null')) {
+      currentFile = null;
+      continue;
+    }
+
+    if (currentFile && line.startsWith('@@ ')) {
+      const match = /\+(\d+)(?:,(\d+))?/.exec(line);
+      if (!match) continue;
+      const start = Number.parseInt(match[1] ?? '0', 10);
+      const count = match[2] !== undefined ? Number.parseInt(match[2], 10) : 1;
+      if (start > 0 && count > 0) {
+        ranges[currentFile]?.push([start, start + count - 1]);
+      }
+    }
+  }
+
+  return ranges;
+}
+
 export function normalizePath(filePath: string): string {
   return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
 }
@@ -73,9 +103,10 @@ export async function getGitDiff(
   const currentBranch = (await repoGit.revparse(['--abbrev-ref', 'HEAD'])).trim();
 
   if (staged) {
-    const [summary, nameStatusRaw] = await Promise.all([
+    const [summary, nameStatusRaw, unifiedDiff] = await Promise.all([
       repoGit.diffSummary(['--cached']),
       repoGit.raw(['diff', '--cached', '--name-status']),
+      repoGit.raw(['diff', '--cached', '-U0']),
     ]);
 
     const statusMap = parseNameStatus(nameStatusRaw);
@@ -99,6 +130,7 @@ export async function getGitDiff(
       currentBranch,
       baseRef: 'HEAD (staged)',
       files,
+      changedLineRanges: parseDiffHunkRanges(unifiedDiff),
       totalInsertions: summary.insertions,
       totalDeletions: summary.deletions,
     };
@@ -108,9 +140,10 @@ export async function getGitDiff(
   // Three-dot range isolates commits on HEAD since it diverged from base
   const diffRange = `${resolvedBase}...HEAD`;
 
-  const [summary, nameStatusRaw] = await Promise.all([
+  const [summary, nameStatusRaw, unifiedDiff] = await Promise.all([
     repoGit.diffSummary([diffRange]),
     repoGit.raw(['diff', '--name-status', diffRange]),
+    repoGit.raw(['diff', '-U0', diffRange]),
   ]);
 
   const statusMap = parseNameStatus(nameStatusRaw);
@@ -134,6 +167,7 @@ export async function getGitDiff(
     currentBranch,
     baseRef: resolvedBase,
     files,
+    changedLineRanges: parseDiffHunkRanges(unifiedDiff),
     totalInsertions: summary.insertions,
     totalDeletions: summary.deletions,
   };

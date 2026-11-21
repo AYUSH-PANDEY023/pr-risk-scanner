@@ -3,14 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import pc from 'picocolors';
-import { DEFAULT_CONFIG, formatReport, scanRepo } from './index.js';
+import { DEFAULT_CONFIG, formatMarkdownReport, formatReport, scanRepo } from './index.js';
 
 const program = new Command();
 
 program
   .name('pr-risk-scanner')
   .description('Offline PR risk scorer based on git diff, AST analysis, and code duplication')
-  .version('1.0.0')
+  .version('1.1.0')
   .option('-b, --base <branch>', 'base branch or ref to diff against (default: main)')
   .option('-c, --config <path>', 'path to local pr-risk.config.json')
   .option('--staged', 'analyze staged changes instead of branch diff against base', false)
@@ -18,6 +18,7 @@ program
   .option('--threshold <number>', 'risk score threshold for --ci failure (default: 70)')
   .option('--ci', 'exit with code 1 if risk score meets or exceeds threshold', false)
   .option('--json', 'print raw JSON report instead of colored table', false)
+  .option('--markdown', 'print GitHub-flavored Markdown report for PR comments', false)
   .option('--init', 'write a starter pr-risk.config.json in the current directory', false)
   .action(async (opts: {
     base?: string;
@@ -27,6 +28,7 @@ program
     threshold?: string;
     ci?: boolean;
     json?: boolean;
+    markdown?: boolean;
     init?: boolean;
   }) => {
     try {
@@ -66,12 +68,14 @@ program
 
       if (opts.json) {
         process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+      } else if (opts.markdown) {
+        process.stdout.write(formatMarkdownReport(report));
       } else {
         process.stdout.write(formatReport(report));
       }
 
       if (opts.ci && report.score >= failThreshold) {
-        if (!opts.json) {
+        if (!opts.json && !opts.markdown) {
           process.stderr.write(
             pc.red(`CI check failed: risk score ${report.score} >= threshold ${failThreshold}\n`),
           );

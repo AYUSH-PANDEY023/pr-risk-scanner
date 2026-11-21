@@ -1,12 +1,15 @@
+import { DEFAULT_WEIGHTS } from './config.js';
 import type {
   DiffMetricsResult,
   DuplicateBlockFinding,
   LargeFunctionFinding,
   ReviewFocus,
   RiskItem,
+  RiskyPatternFinding,
   ScanReport,
   Severity,
   SignalScore,
+  SignalWeights,
 } from './types.js';
 
 export interface ScoreInput {
@@ -14,8 +17,10 @@ export interface ScoreInput {
   baseRef: string;
   diffMetrics: DiffMetricsResult;
   largeFunctions: LargeFunctionFinding[];
+  riskyPatterns?: RiskyPatternFinding[];
   duplicates: DuplicateBlockFinding[];
   maxFunctionLines: number;
+  weights?: SignalWeights;
 }
 
 const SEVERITY_RANK: Record<Severity, number> = {
@@ -33,7 +38,7 @@ export function scoreToLevel(score: number): Severity {
 }
 
 function ratioToSeverity(points: number, maxPoints: number): Severity {
-  if (points === 0) return 'low';
+  if (points === 0 || maxPoints <= 0) return 'low';
   const ratio = points / maxPoints;
   if (ratio >= 0.85) return 'critical';
   if (ratio >= 0.6) return 'high';
@@ -41,58 +46,73 @@ function ratioToSeverity(points: number, maxPoints: number): Severity {
   return 'low';
 }
 
-function scoreFilesChanged(count: number): number {
+function scale(ratio: number, maxPoints: number): number {
+  if (maxPoints <= 0 || ratio <= 0) return 0;
+  return Math.min(maxPoints, Math.round(Math.min(1, ratio) * maxPoints));
+}
+
+function filesRatio(count: number): number {
   if (count <= 3) return 0;
-  if (count <= 7) return 4;
-  if (count <= 14) return 8;
-  if (count <= 24) return 12;
-  return 15;
+  if (count <= 7) return 0.3;
+  if (count <= 14) return 0.55;
+  if (count <= 24) return 0.8;
+  return 1;
 }
 
-function scoreLinesChanged(lines: number): number {
+function linesRatio(lines: number): number {
   if (lines <= 100) return 0;
-  if (lines <= 250) return 5;
-  if (lines <= 500) return 10;
-  if (lines <= 900) return 15;
-  return 20;
+  if (lines <= 250) return 0.25;
+  if (lines <= 500) return 0.5;
+  if (lines <= 900) return 0.75;
+  return 1;
 }
 
-function scoreMissingTests(diffMetrics: DiffMetricsResult): number {
+function missingTestsRatio(diffMetrics: DiffMetricsResult): number {
   if (!diffMetrics.missingTests) return 0;
-  return diffMetrics.totalLinesChanged > 150 ? 15 : 10;
+  return diffMetrics.totalLinesChanged > 150 ? 1 : 0.67;
 }
 
-function scoreCriticalPaths(matches: DiffMetricsResult['criticalMatches']): number {
+function criticalPathsRatio(matches: DiffMetricsResult['criticalMatches']): number {
   if (matches.length === 0) return 0;
   const totalChurn = matches.reduce((sum, m) => sum + m.churn, 0);
-  const base = 12 + (matches.length - 1) * 5;
-  const churnBonus = totalChurn >= 120 ? 4 : 0;
-  return Math.min(25, base + churnBonus);
+  const base = 0.5 + (matches.length - 1) * 0.2;
+  const churnBonus = totalChurn >= 120 ? 0.15 : 0;
+  return Math.min(1, base + churnBonus);
 }
 
-function scoreDuplicates(duplicates: DuplicateBlockFinding[]): number {
+function duplicatesRatio(duplicates: DuplicateBlockFinding[]): number {
   if (duplicates.length === 0) return 0;
   const totalDupLines = duplicates.reduce((sum, d) => sum + d.lines, 0);
-  const raw = duplicates.length * 4 + (totalDupLines >= 40 ? 2 : 0);
-  return Math.min(10, raw);
+  return Math.min(1, duplicates.length * 0.4 + (totalDupLines >= 40 ? 0.2 : 0));
 }
 
-function scoreLargeFunctions(findings: LargeFunctionFinding[]): number {
+function largeFunctionsRatio(findings: LargeFunctionFinding[]): number {
   if (findings.length === 0) return 0;
   const largest = findings[0]?.lineCount ?? 0;
-  const raw = findings.length * 4 + (largest >= 100 ? 4 : 0);
-  return Math.min(15, raw);
+  return Math.min(1, findings.length * 0.3 + (largest >= 100 ? 0.25 : 0));
+}
+
+function riskyPatternsRatio(findings: RiskyPatternFinding[]): number {
+  if (findings.length === 0) return 0;
+  const weighted = findings.reduce(
+    (sum, item) => sum + (item.severity === 'high' ? 0.45 : 0.25),
+    0,
+  );
+  return Math.min(1, weighted);
 }
 
 export function buildScanReport(input: ScoreInput): ScanReport {
   const { diffMetrics, largeFunctions, duplicates, maxFunctionLines } = input;
+  const riskyPatterns = input.riskyPatterns ?? [];
+  const w = input.weights ?? DEFAULT_WEIGHTS;
 
-  const filesPts = scoreFilesChanged(diffMetrics.totalFilesChanged);
-  const linesPts = scoreLinesChanged(diffMetrics.totalLinesChanged);
-  const testsPts = scoreMissingTests(diffMetrics);
-  const criticalPts = scoreCriticalPaths(diffMetrics.criticalMatches);
-  const dupPts = scoreDuplicates(duplicates);
-  const fnPts = scoreLargeFunctions(largeFunctions);
+  const filesPts = scale(filesRatio(diffMetrics.totalFilesChanged), w.filesChanged);
+  const linesPts = scale(linesRatio(diffMetrics.totalLinesChanged), w.linesChanged);
+  const testsPts = scale(missingTestsRatio(diffMetrics), w.missingTests);
+  const criticalPts = scale(criticalPathsRatio(diffMetrics.criticalMatches), w.criticalPaths);
+  const dupPts = scale(duplicatesRatio(duplicates), w.duplicateCode);
+  const fnPts = scale(largeFunctionsRatio(largeFunctions), w.largeFunctions);
+  const riskyPts = scale(riskyPatternsRatio(riskyPatterns), w.riskyPatterns);
 
   const signals: SignalScore[] = [
     {
@@ -100,16 +120,16 @@ export function buildScanReport(input: ScoreInput): ScanReport {
       label: 'Files changed',
       observed: `${diffMetrics.totalFilesChanged} file${diffMetrics.totalFilesChanged === 1 ? '' : 's'}`,
       points: filesPts,
-      maxPoints: 15,
-      severity: ratioToSeverity(filesPts, 15),
+      maxPoints: w.filesChanged,
+      severity: ratioToSeverity(filesPts, w.filesChanged),
     },
     {
       key: 'linesChanged',
       label: 'Lines changed',
       observed: `${diffMetrics.totalLinesChanged} lines`,
       points: linesPts,
-      maxPoints: 20,
-      severity: ratioToSeverity(linesPts, 20),
+      maxPoints: w.linesChanged,
+      severity: ratioToSeverity(linesPts, w.linesChanged),
     },
     {
       key: 'missingTests',
@@ -118,8 +138,8 @@ export function buildScanReport(input: ScoreInput): ScanReport {
         ? '0 test files updated'
         : `${diffMetrics.testFiles.length} test file${diffMetrics.testFiles.length === 1 ? '' : 's'}`,
       points: testsPts,
-      maxPoints: 15,
-      severity: ratioToSeverity(testsPts, 15),
+      maxPoints: w.missingTests,
+      severity: ratioToSeverity(testsPts, w.missingTests),
     },
     {
       key: 'criticalPaths',
@@ -129,8 +149,8 @@ export function buildScanReport(input: ScoreInput): ScanReport {
           ? `${diffMetrics.criticalMatches.length} sensitive file${diffMetrics.criticalMatches.length === 1 ? '' : 's'}`
           : 'none',
       points: criticalPts,
-      maxPoints: 25,
-      severity: ratioToSeverity(criticalPts, 25),
+      maxPoints: w.criticalPaths,
+      severity: ratioToSeverity(criticalPts, w.criticalPaths),
     },
     {
       key: 'duplicateCode',
@@ -140,8 +160,8 @@ export function buildScanReport(input: ScoreInput): ScanReport {
           ? `${duplicates.length} block${duplicates.length === 1 ? '' : 's'}`
           : 'none',
       points: dupPts,
-      maxPoints: 10,
-      severity: ratioToSeverity(dupPts, 10),
+      maxPoints: w.duplicateCode,
+      severity: ratioToSeverity(dupPts, w.duplicateCode),
     },
     {
       key: 'largeFunctions',
@@ -151,8 +171,19 @@ export function buildScanReport(input: ScoreInput): ScanReport {
           ? `${largeFunctions.length} function${largeFunctions.length === 1 ? '' : 's'}`
           : 'none',
       points: fnPts,
-      maxPoints: 15,
-      severity: ratioToSeverity(fnPts, 15),
+      maxPoints: w.largeFunctions,
+      severity: ratioToSeverity(fnPts, w.largeFunctions),
+    },
+    {
+      key: 'riskyPatterns',
+      label: 'Risky code patterns',
+      observed:
+        riskyPatterns.length > 0
+          ? `${riskyPatterns.length} issue${riskyPatterns.length === 1 ? '' : 's'}`
+          : 'none',
+      points: riskyPts,
+      maxPoints: w.riskyPatterns,
+      severity: ratioToSeverity(riskyPts, w.riskyPatterns),
     },
   ];
 
@@ -168,6 +199,15 @@ export function buildScanReport(input: ScoreInput): ScanReport {
       category: 'criticalPaths',
       location: match.file,
       message: `Touched critical path (${match.matchedPattern}) with ${match.churn} lines changed`,
+    });
+  }
+
+  for (const issue of riskyPatterns.slice(0, 8)) {
+    topRisks.push({
+      severity: issue.severity,
+      category: 'riskyPatterns',
+      location: `${issue.file}:${issue.line}`,
+      message: `[${issue.rule}] ${issue.message}`,
     });
   }
 
@@ -209,7 +249,7 @@ export function buildScanReport(input: ScoreInput): ScanReport {
 
   topRisks.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]);
 
-  const reviewFocus = buildReviewFocus(diffMetrics, largeFunctions, duplicates);
+  const reviewFocus = buildReviewFocus(diffMetrics, largeFunctions, duplicates, riskyPatterns);
 
   return {
     branch: input.branch,
@@ -217,7 +257,7 @@ export function buildScanReport(input: ScoreInput): ScanReport {
     score,
     level,
     signals,
-    topRisks: topRisks.slice(0, 12),
+    topRisks: topRisks.slice(0, 14),
     reviewFocus,
     metrics: {
       filesChanged: diffMetrics.totalFilesChanged,
@@ -226,6 +266,7 @@ export function buildScanReport(input: ScoreInput): ScanReport {
       criticalFilesTouched: diffMetrics.criticalMatches.length,
       duplicateBlocks: duplicates.length,
       largeFunctions: largeFunctions.length,
+      riskyPatterns: riskyPatterns.length,
     },
   };
 }
@@ -234,6 +275,7 @@ function buildReviewFocus(
   diffMetrics: DiffMetricsResult,
   largeFunctions: LargeFunctionFinding[],
   duplicates: DuplicateBlockFinding[],
+  riskyPatterns: RiskyPatternFinding[],
 ): ReviewFocus[] {
   const focus: ReviewFocus[] = [];
 
@@ -282,6 +324,15 @@ function buildReviewFocus(
       priority: 'P1',
       area: 'Sensitive modules',
       detail: `Do a line-by-line review of ${otherCritical.map((f) => f.file).slice(0, 3).join(', ')}.`,
+    });
+  }
+
+  if (riskyPatterns.length > 0) {
+    const first = riskyPatterns[0]!;
+    focus.push({
+      priority: 'P1',
+      area: 'Unsafe patterns & error handling',
+      detail: `Inspect ${riskyPatterns.length} flagged pattern(s) starting at ${first.file}:${first.line} (${first.rule}).`,
     });
   }
 

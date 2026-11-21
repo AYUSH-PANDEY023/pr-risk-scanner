@@ -1,6 +1,6 @@
 {
   "name": "pr-risk-scanner",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Offline git diff risk scorer for pull requests using AST and duplication analysis",
   "author": "AYUSH-PANDEY023",
   "license": "MIT",
