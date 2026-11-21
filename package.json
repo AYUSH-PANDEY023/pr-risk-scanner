@@ -2,6 +2,16 @@
   "name": "pr-risk-scanner",
   "version": "1.0.0",
   "description": "Offline git diff risk scorer for pull requests using AST and duplication analysis",
+  "author": "AYUSH-PANDEY023",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AYUSH-PANDEY023/pr-risk-scanner.git"
+  },
+  "homepage": "https://github.com/AYUSH-PANDEY023/pr-risk-scanner#readme",
+  "bugs": {
+    "url": "https://github.com/AYUSH-PANDEY023/pr-risk-scanner/issues"
+  },
   "type": "module",
   "bin": {
     "pr-risk-scanner": "./dist/cli.js"
@@ -10,13 +20,15 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18.0.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
     "dev": "tsx src/cli.ts",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -43,6 +55,5 @@
     "ts-morph",
     "jscpd",
     "offline"
-  ],
-  "license": "MIT"
+  ]
 }

@@ -1,31 +1,59 @@
 # pr-risk-scanner
 
-Offline Node.js CLI that scores pull request risk (`0–100`) from local git diffs, AST function sizing, and copy-paste detection. Zero external API calls, zero API keys.
+Local-first Node.js CLI that scores pull request risk (`0–100`) from your git diff, TypeScript/JavaScript AST, and copy-paste detection. Runs completely offline with no external APIs or keys.
 
-## What It Checks
+## Why
 
-| Signal | Max Points | Method |
-| --- | ---: | --- |
-| Files changed | 15 | `simple-git` branch diff vs base (`main`) |
-| Lines changed | 20 | Insertions + deletions (excluding lockfiles/build output) |
-| Missing test updates | 15 | Flags production code diffs with zero test file changes |
-| Critical path touches | 25 | Segment-aware matching for `/auth`, `/payments`, `/migrations` |
-| Duplicate code | 10 | `jscpd` (`v4`) clone detection scoped to changed files |
-| Large functions | 15 | `ts-morph` AST scan across changed JS/TS files |
+Large PRs—especially ones with heavy generated or refactored code—hide risky changes behind noisy diffs. `pr-risk-scanner` gives reviewers a fast, deterministic signal before reading a single line: how big the diff is, whether tests were updated, whether sensitive paths were touched, and where oversized functions or duplicated blocks crept in.
 
-## Setup
+## Sample Output
+
+```text
+pr-risk-scanner  feat/checkout-retry → main
+Risk Score: 74/100  ███████████████░░░░░  HIGH
+
+┌─────────────────────────┬──────────────────────┬────────┬────────┐
+│ Signal                  │ Observed             │ Points │ Status │
+├─────────────────────────┼──────────────────────┼────────┼────────┤
+│ Files changed           │ 6 files              │   4/15 │ LOW    │
+│ Lines changed           │ 342 lines            │  10/20 │ MEDIUM │
+│ Test coverage delta     │ 0 test files updated │  15/15 │ CRITICAL │
+│ Critical paths          │ 2 sensitive files    │  21/25 │ HIGH   │
+│ Duplicate code (jscpd)  │ 1 block              │   4/10 │ MEDIUM │
+│ Large functions (>50L)  │ 2 functions          │  12/15 │ HIGH   │
+└─────────────────────────┴──────────────────────┴────────┴────────┘
+
+Top Risks
+  CRITICAL  src/payments/checkout.ts        Touched critical path (/payments) with 148 lines changed
+  HIGH      (branch diff)                   6 source file(s) changed with no matching test updates
+  HIGH      src/payments/checkout.ts:42     processCheckout is 112 lines long (limit 50)
+  MEDIUM    src/payments/retry.ts:18-41     24 duplicated lines also found in src/payments/refund.ts:29-52
+
+Suggested Human Review Focus
+  1. [P1] Payments & idempotency — Verify idempotency keys, webhook signature checks, and rounding/currency handling in src/payments/checkout.ts.
+  2. [P1] Missing test coverage — Request unit/integration tests covering failure branches in src/payments/checkout.ts, src/payments/retry.ts.
+  3. [P2] Complex functions — Walk through control flow and error handling in processCheckout (src/payments/checkout.ts:42, 112 lines) and consider extracting helpers.
+```
+
+## Install
+
+### Direct from GitHub
 
 ```bash
+npm install -g github:AYUSH-PANDEY023/pr-risk-scanner
+```
+
+### Local Clone
+
+```bash
+git clone https://github.com/AYUSH-PANDEY023/pr-risk-scanner.git
+cd pr-risk-scanner
 npm install
 npm run build
-npm test
-```
-
-Link globally if you want to run `pr-risk-scanner` inside any local repository:
-
-```bash
 npm link
 ```
+
+Requires Node.js `>=18`.
 
 ## Usage
 
@@ -35,28 +63,53 @@ Run from inside any git repository on a feature branch:
 pr-risk-scanner
 ```
 
-Common flags:
+### CLI Options
+
+| Flag | Description | Default |
+| --- | --- | --- |
+| `-b, --base <branch>` | Base branch or ref to diff against (falls back to `origin/<branch>`) | `main` |
+| `-c, --config <path>` | Path to a custom JSON config file | `pr-risk.config.json` |
+| `--staged` | Scan staged changes (`git diff --cached`) instead of branch diff | `false` |
+| `--max-fn-lines <n>` | Line threshold for flagging large functions via `ts-morph` | `50` |
+| `--threshold <n>` | Score (`0–100`) at or above which `--ci` exits with code `1` | `70` |
+| `--ci` | CI mode: exit `1` when risk score meets or exceeds threshold | `false` |
+| `--json` | Output raw JSON report instead of the terminal table | `false` |
+| `--init` | Generate a starter `pr-risk.config.json` in the current directory | `false` |
+
+### Examples
 
 ```bash
-# Compare against a different base branch
+# Diff against develop instead of main
 pr-risk-scanner --base develop
 
-# Scan staged changes before committing
+# Check staged changes before committing
 pr-risk-scanner --staged
 
-# Fail CI if risk score >= 65
+# Gate CI builds on score >= 65
 pr-risk-scanner --ci --threshold 65
 
-# Emit machine-readable JSON
-pr-risk-scanner --json
-
-# Use a custom local config file
-pr-risk-scanner --config ./pr-risk.config.json
+# Pipe structured output into jq
+pr-risk-scanner --json | jq '.topRisks'
 ```
+
+## Scoring Model
+
+Scores are capped at `100` and split across six deterministic signals:
+
+| Signal | Max Points | How It Works |
+| --- | ---: | --- |
+| Files changed | 15 | Counts non-ignored files in the three-dot diff (`base...HEAD`) |
+| Lines changed | 20 | Sums insertions + deletions (lockfiles and build output ignored) |
+| Test coverage delta | 15 | Flags production code diffs (`>=15` lines) with zero test file changes |
+| Critical paths | 25 | Segment-aware matching for `/auth`, `/payments`, `/migrations` (avoids false positives like `/author`) |
+| Duplicate code | 10 | Runs `jscpd` (`v4`) and reports only clones touching changed PR files |
+| Large functions | 15 | Parses changed JS/TS files with `ts-morph` and flags functions/methods over the line limit |
+
+Risk levels: `0–29` **LOW**, `30–59` **MEDIUM**, `60–79` **HIGH**, `80–100` **CRITICAL**.
 
 ## Configuration
 
-Drop a `pr-risk.config.json` (or `.pr-riskrc.json`) at your repo root. See `pr-risk.config.example.json` for all fields:
+Run `pr-risk-scanner --init` or add a `pr-risk.config.json` (or `.pr-riskrc.json`) at your repository root:
 
 ```json
 {
@@ -65,6 +118,47 @@ Drop a `pr-risk.config.json` (or `.pr-riskrc.json`) at your repo root. See `pr-r
   "criticalPaths": ["/auth", "/payments", "/migrations"],
   "maxFunctionLines": 50,
   "duplicateMinLines": 6,
-  "duplicateMinTokens": 50
+  "duplicateMinTokens": 50,
+  "ignoreFiles": [
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "dist/",
+    "build/",
+    ".next/"
+  ]
 }
 ```
+
+## GitHub Actions Example
+
+```yaml
+name: PR Risk Check
+on: [pull_request]
+
+jobs:
+  risk-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install -g github:AYUSH-PANDEY023/pr-risk-scanner
+      - run: pr-risk-scanner --base ${{ github.base_ref }} --ci --threshold 75
+```
+
+## Development
+
+```bash
+npm install
+npm run typecheck
+npm test
+npm run build
+```
+
+## License
+
+[MIT](./LICENSE)

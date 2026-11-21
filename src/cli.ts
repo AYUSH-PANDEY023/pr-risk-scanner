@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
 import { Command } from 'commander';
 import pc from 'picocolors';
-import { formatReport, scanRepo } from './index.js';
+import { DEFAULT_CONFIG, formatReport, scanRepo } from './index.js';
 
 const program = new Command();
 
@@ -16,6 +18,7 @@ program
   .option('--threshold <number>', 'risk score threshold for --ci failure (default: 70)')
   .option('--ci', 'exit with code 1 if risk score meets or exceeds threshold', false)
   .option('--json', 'print raw JSON report instead of colored table', false)
+  .option('--init', 'write a starter pr-risk.config.json in the current directory', false)
   .action(async (opts: {
     base?: string;
     config?: string;
@@ -24,11 +27,25 @@ program
     threshold?: string;
     ci?: boolean;
     json?: boolean;
+    init?: boolean;
   }) => {
     try {
+      if (opts.init) {
+        const target = path.resolve(process.cwd(), 'pr-risk.config.json');
+        if (fs.existsSync(target)) {
+          throw new Error(`Config already exists at ${target}`);
+        }
+        fs.writeFileSync(target, `${JSON.stringify(DEFAULT_CONFIG, null, 2)}\n`, 'utf8');
+        process.stdout.write(`${pc.green('Created')} ${target}\n`);
+        return;
+      }
+
       const parsedThreshold =
         opts.threshold !== undefined ? Number.parseInt(opts.threshold, 10) : undefined;
-      if (parsedThreshold !== undefined && (Number.isNaN(parsedThreshold) || parsedThreshold < 0 || parsedThreshold > 100)) {
+      if (
+        parsedThreshold !== undefined &&
+        (Number.isNaN(parsedThreshold) || parsedThreshold < 0 || parsedThreshold > 100)
+      ) {
         throw new Error('--threshold must be an integer between 0 and 100.');
       }
 
