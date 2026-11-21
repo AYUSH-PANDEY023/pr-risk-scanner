@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { detectClones } from 'jscpd';
+import { createRequire } from "node:module";
+import type { detectClones as DetectClonesFn } from "jscpd";
+
+const require = createRequire(import.meta.url);
+const { detectClones } = require("jscpd") as { detectClones: typeof DetectClonesFn };
 import { normalizePath } from '../git.js';
 import type { ChangedFile, DuplicateBlockFinding, ScannerConfig } from '../types.js';
 
