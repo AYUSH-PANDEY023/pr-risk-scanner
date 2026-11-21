@@ -1,5 +1,10 @@
-name: 'PR Risk Scanner'
+name: 'PR Risk Scanner (Offline)'
+author: 'AYUSH-PANDEY023'
 description: 'Offline deterministic PR risk analysis using git diff, ts-morph AST, and jscpd'
+branding:
+  icon: 'shield'
+  color: 'blue'
+
 inputs:
   base:
     description: 'Base branch or ref to compare HEAD against'
