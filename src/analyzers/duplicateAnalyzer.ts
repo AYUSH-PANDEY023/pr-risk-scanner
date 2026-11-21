@@ -83,7 +83,7 @@ export async function analyzeDuplicates(
       startLineB,
       endLineB,
       lines,
-      tokens: clone.duplicationA.end.position - clone.duplicationA.start.position,
+      tokens: Math.max(0, (clone.duplicationA.end.position ?? 0) - (clone.duplicationA.start.position ?? 0)),
     });
   }
 
