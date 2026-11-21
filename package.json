@@ -1,0 +1,48 @@
+{
+  "name": "pr-risk-scanner",
+  "version": "1.0.0",
+  "description": "Offline git diff risk scorer for pull requests using AST and duplication analysis",
+  "type": "module",
+  "bin": {
+    "pr-risk-scanner": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "jscpd": "^4.0.5",
+    "picocolors": "^1.1.1",
+    "simple-git": "^3.27.0",
+    "ts-morph": "^24.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  },
+  "keywords": [
+    "git",
+    "pr-review",
+    "static-analysis",
+    "cli",
+    "ts-morph",
+    "jscpd",
+    "offline"
+  ],
+  "license": "MIT"
+}

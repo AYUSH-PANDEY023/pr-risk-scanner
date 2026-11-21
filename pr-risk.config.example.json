@@ -1,0 +1,26 @@
+{
+  "baseBranch": "main",
+  "failThreshold": 70,
+  "criticalPaths": [
+    "/auth",
+    "/payments",
+    "/migrations"
+  ],
+  "maxFunctionLines": 50,
+  "duplicateMinLines": 6,
+  "duplicateMinTokens": 50,
+  "ignoreFiles": [
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "dist/",
+    "build/",
+    ".next/"
+  ],
+  "testPatterns": [
+    "\\.test\\.[jt]sx?$",
+    "\\.spec\\.[jt]sx?$",
+    "(^|/)__tests__/",
+    "(^|/)tests?/"
+  ]
+}
